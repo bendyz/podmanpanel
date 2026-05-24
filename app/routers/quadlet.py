@@ -1,3 +1,4 @@
+import subprocess
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.quadlet import get_quadlet_files, read_quadlet, write_quadlet
@@ -26,6 +27,16 @@ def get_file(name: str):
 def save_file(name: str, body: QuadletEditModel):
     if not name.endswith(".container"):
         raise HTTPException(status_code=400, detail="Only .container files allowed")
-    if write_quadlet(name, body.content):
-        return {"ok": True}
-    raise HTTPException(status_code=500, detail="Failed to write file")
+    if not write_quadlet(name, body.content):
+        raise HTTPException(status_code=500, detail="Failed to write file")
+    # Reload systemd so it picks up the changed unit immediately
+    reload = subprocess.run(
+        ["systemctl", "--user", "daemon-reload"],
+        capture_output=True,
+        text=True,
+    )
+    return {
+        "ok": True,
+        "reload_ok": reload.returncode == 0,
+        "reload_msg": (reload.stdout + reload.stderr).strip(),
+    }

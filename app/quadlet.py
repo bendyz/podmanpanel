@@ -9,7 +9,7 @@ def _scan_dir(d: Path) -> list[dict]:
     return [
         {
             "name": f.name,
-            # quadlet `foo.container` maps to systemd unit `foo.service`
+            # quadlet `foo.container` → systemd unit `foo.service`
             "service": f.stem + ".service",
             "path": str(f),
         }
@@ -21,9 +21,32 @@ def _scan_dir(d: Path) -> list[dict]:
 def get_quadlet_files() -> list[dict]:
     base = Path(QUADLET_DIR)
     files = _scan_dir(base)
-    # Also check the `user/` subdirectory (some distros place units there)
     files += _scan_dir(base / "user")
     return files
+
+
+def get_container_name_for_quadlet(path: str, filename: str) -> str:
+    """Return the container name this quadlet creates.
+
+    Parses ``ContainerName=`` from the [Container] section.
+    Falls back to ``systemd-{stem}`` (podman quadlet default).
+    """
+    stem = Path(filename).stem
+    default = f"systemd-{stem}"
+    try:
+        in_container = False
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("["):
+                    in_container = line.lower() == "[container]"
+                elif in_container and line.lower().startswith("containername="):
+                    name = line.split("=", 1)[1].strip()
+                    if name:
+                        return name
+    except Exception:
+        pass
+    return default
 
 
 def _find_path(name: str) -> Path | None:
