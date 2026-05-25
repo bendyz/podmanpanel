@@ -57,7 +57,10 @@ INDEX_HTML = """<!DOCTYPE html>
             <div class="bg-gray-800 rounded-lg p-4">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-xl font-semibold">Services</h2>
-                    <button onclick="loadServices()" class="text-xs text-gray-400 hover:text-gray-200">&#x21bb; Refresh</button>
+                    <div class="flex gap-2">
+                        <button onclick="newQuadlet()" class="text-xs bg-green-700 hover:bg-green-600 px-3 py-1 rounded">+ New Quadlet</button>
+                        <button onclick="loadServices()" class="text-xs text-gray-400 hover:text-gray-200">&#x21bb; Refresh</button>
+                    </div>
                 </div>
                 <div id="services" class="space-y-2">
                     <p class="text-gray-400 text-sm">Loading…</p>
@@ -90,17 +93,43 @@ INDEX_HTML = """<!DOCTYPE html>
     </div>
 </div>
 
-<!-- Edit Modal -->
+<!-- Edit / Create Modal -->
 <div id="edit-modal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
     <div class="bg-gray-800 rounded-lg p-6 w-full max-w-2xl mx-4 flex flex-col" style="max-height:90vh">
-        <h3 class="text-xl font-semibold mb-1">Edit Quadlet</h3>
+        <h3 id="modal-title" class="text-xl font-semibold mb-1">Edit Quadlet</h3>
         <p id="edit-filename" class="text-gray-400 text-sm mb-3"></p>
+        <div id="new-filename-row" class="hidden mb-3">
+            <input id="new-filename" type="text" placeholder="myservice.container"
+                class="w-full bg-gray-900 px-3 py-2 rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
         <textarea id="quadlet-editor" rows="20"
             class="flex-1 bg-gray-900 p-3 rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-blue-500 overflow-auto"></textarea>
         <div class="flex justify-end gap-2 mt-4">
             <button onclick="closeEditor()" class="px-4 py-2 rounded bg-gray-600 hover:bg-gray-700">Cancel</button>
             <button onclick="saveQuadlet()" class="px-4 py-2 rounded bg-green-600 hover:bg-green-700">Save + daemon-reload</button>
         </div>
+    </div>
+</div>
+
+<!-- Journal Modal -->
+<div id="journal-modal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+    <div class="bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 flex flex-col" style="max-height:90vh">
+        <div class="flex items-center justify-between mb-3">
+            <div>
+                <h3 class="text-xl font-semibold">Journal</h3>
+                <p id="journal-service" class="text-gray-400 text-sm"></p>
+            </div>
+            <div class="flex items-center gap-3">
+                <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input id="journal-follow" type="checkbox" checked
+                        class="w-4 h-4 accent-purple-500" onchange="toggleJournalFollow()">
+                    Follow
+                </label>
+                <button onclick="closeJournal()" class="px-3 py-1 rounded bg-gray-600 hover:bg-gray-700 text-sm">Close</button>
+            </div>
+        </div>
+        <pre id="journal-output"
+            class="flex-1 bg-gray-900 p-3 rounded text-xs font-mono overflow-auto whitespace-pre-wrap" style="min-height:300px"></pre>
     </div>
 </div>
 
@@ -168,6 +197,7 @@ async function loadServices() {
             // Action buttons for managed services (quadlet exists)
             const managedBtns = isManaged ? `
                 <button onclick="editSvc(${i})"      class="px-2 py-1 text-xs rounded bg-gray-600 hover:bg-gray-500">Edit</button>
+                <button onclick="openJournal(${i})"  class="px-2 py-1 text-xs rounded bg-purple-800 hover:bg-purple-700">Journal</button>
                 <button onclick="svcStatus(${i})"    class="px-2 py-1 text-xs rounded bg-gray-600 hover:bg-gray-500">Status</button>
                 <button onclick="svcAction(${i},'start')"   class="px-2 py-1 text-xs rounded bg-green-800 hover:bg-green-700">Start</button>
                 <button onclick="svcAction(${i},'stop')"    class="px-2 py-1 text-xs rounded bg-red-800 hover:bg-red-700">Stop</button>
@@ -262,15 +292,46 @@ async function pullImage(idx) {
 // ── Quadlet editor ────────────────────────────────────────────────────────────
 
 let _editingQuadlet = '';
+let _creatingNew = false;
 
-async function editSvc(idx) {
-    _editingQuadlet = _services[idx].quadlet_file;
-    document.getElementById('edit-filename').textContent = _editingQuadlet;
-    const d = await fetch(`/api/quadlet/${encodeURIComponent(_editingQuadlet)}`).then(r => r.json());
-    document.getElementById('quadlet-editor').value = d.content;
+function _openModal() {
     const modal = document.getElementById('edit-modal');
     modal.classList.remove('hidden');
     modal.classList.add('flex');
+}
+
+function newQuadlet() {
+    _creatingNew = true;
+    _editingQuadlet = '';
+    document.getElementById('modal-title').textContent = 'New Quadlet';
+    document.getElementById('edit-filename').textContent = '';
+    document.getElementById('edit-filename').classList.add('hidden');
+    document.getElementById('new-filename-row').classList.remove('hidden');
+    document.getElementById('new-filename').value = '';
+    document.getElementById('quadlet-editor').value = `[Unit]
+Description=
+
+[Container]
+Image=
+ContainerName=
+
+[Install]
+WantedBy=default.target
+`;
+    _openModal();
+    document.getElementById('new-filename').focus();
+}
+
+async function editSvc(idx) {
+    _creatingNew = false;
+    _editingQuadlet = _services[idx].quadlet_file;
+    document.getElementById('modal-title').textContent = 'Edit Quadlet';
+    document.getElementById('edit-filename').textContent = _editingQuadlet;
+    document.getElementById('edit-filename').classList.remove('hidden');
+    document.getElementById('new-filename-row').classList.add('hidden');
+    const d = await fetch(`/api/quadlet/${encodeURIComponent(_editingQuadlet)}`).then(r => r.json());
+    document.getElementById('quadlet-editor').value = d.content;
+    _openModal();
 }
 
 function closeEditor() {
@@ -279,18 +340,90 @@ function closeEditor() {
 
 async function saveQuadlet() {
     const content = document.getElementById('quadlet-editor').value;
-    const d = await fetch(`/api/quadlet/${encodeURIComponent(_editingQuadlet)}`, {
-        method: 'PUT',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({content}),
-    }).then(r => r.json());
-    closeEditor();
-    if (d.reload_ok) {
-        toast('Saved & daemon-reloaded ✓');
+
+    if (_creatingNew) {
+        let name = document.getElementById('new-filename').value.trim();
+        if (!name) { toast('Filename is required', false); return; }
+        if (!name.endsWith('.container')) name += '.container';
+        const resp = await fetch('/api/quadlet', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name, content}),
+        });
+        const d = await resp.json();
+        if (!resp.ok) { toast(d.detail || 'Failed to create', false); return; }
+        closeEditor();
+        toast(d.reload_ok ? 'Created & daemon-reloaded ✓' : `Created — daemon-reload failed: ${d.reload_msg || '?'}`, d.reload_ok);
     } else {
-        toast(`Saved — daemon-reload failed: ${d.reload_msg || 'unknown error'}`, false);
+        const d = await fetch(`/api/quadlet/${encodeURIComponent(_editingQuadlet)}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({content}),
+        }).then(r => r.json());
+        closeEditor();
+        if (d.reload_ok) {
+            toast('Saved & daemon-reloaded ✓');
+        } else {
+            toast(`Saved — daemon-reload failed: ${d.reload_msg || 'unknown error'}`, false);
+        }
     }
     loadServices();
+}
+
+// ── Journal viewer ───────────────────────────────────────────────────────────
+
+let _journalEvtSource = null;
+let _journalService = '';
+
+function openJournal(idx) {
+    const s = _services[idx];
+    _journalService = s.service;
+    document.getElementById('journal-service').textContent = s.service;
+    document.getElementById('journal-output').textContent = 'Loading…';
+    document.getElementById('journal-follow').checked = true;
+    const modal = document.getElementById('journal-modal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    startJournalStream();
+}
+
+function closeJournal() {
+    stopJournalStream();
+    document.getElementById('journal-modal').classList.replace('flex', 'hidden');
+}
+
+function stopJournalStream() {
+    if (_journalEvtSource) {
+        _journalEvtSource.close();
+        _journalEvtSource = null;
+    }
+}
+
+function startJournalStream() {
+    stopJournalStream();
+    const out = document.getElementById('journal-output');
+    out.textContent = '';
+    _journalEvtSource = new EventSource(
+        `/api/systemctl/${encodeURIComponent(_journalService)}/journal/stream?lines=200`
+    );
+    _journalEvtSource.onmessage = (e) => {
+        const atBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 30;
+        out.textContent += e.data + '\\n';
+        if (atBottom) out.scrollTop = out.scrollHeight;
+    };
+    _journalEvtSource.onerror = () => {
+        out.textContent += '\\n--- stream ended ---\\n';
+        stopJournalStream();
+    };
+}
+
+function toggleJournalFollow() {
+    const follow = document.getElementById('journal-follow').checked;
+    if (follow) {
+        startJournalStream();
+    } else {
+        stopJournalStream();
+    }
 }
 
 // ── Quick Commands ────────────────────────────────────────────────────────────
@@ -362,6 +495,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('edit-modal').addEventListener('click', e => {
         if (e.target === e.currentTarget) closeEditor();
+    });
+    document.getElementById('journal-modal').addEventListener('click', e => {
+        if (e.target === e.currentTarget) closeJournal();
     });
 });
 

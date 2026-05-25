@@ -62,6 +62,19 @@ def read_quadlet(name: str) -> str | None:
     return path.read_text() if path else None
 
 
+def create_quadlet(name: str, content: str) -> Path | None:
+    """Create a new quadlet file. Returns the path on success, None if it already exists."""
+    path = Path(QUADLET_DIR) / name
+    if path.exists():
+        return None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+        return path
+    except Exception:
+        return None
+
+
 def write_quadlet(name: str, content: str) -> bool:
     path = _find_path(name) or Path(QUADLET_DIR) / name
     try:

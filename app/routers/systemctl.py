@@ -1,5 +1,7 @@
+import asyncio
 import subprocess
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/systemctl", tags=["systemctl"])
@@ -39,6 +41,38 @@ def get_status(service: str):
         "enabled": enabled_r.stdout.strip() or "unknown",
         "output": r.stdout + r.stderr,
     }
+
+
+@router.get("/{service}/journal")
+def get_journal(service: str, lines: int = Query(default=200, ge=1, le=5000)):
+    r = subprocess.run(
+        ["journalctl", "--user", "-u", service, "--no-pager", "-n", str(lines)],
+        capture_output=True,
+        text=True,
+    )
+    return {"output": (r.stdout + r.stderr).strip()}
+
+
+@router.get("/{service}/journal/stream")
+async def stream_journal(service: str, lines: int = Query(default=100, ge=0, le=5000)):
+    async def generate():
+        proc = await asyncio.create_subprocess_exec(
+            "journalctl", "--user", "-u", service,
+            "--no-pager", "-n", str(lines), "-f",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        try:
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                yield f"data: {line.decode(errors='replace').rstrip()}\n\n"
+        finally:
+            proc.kill()
+            await proc.wait()
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @router.post("/{service}/action")

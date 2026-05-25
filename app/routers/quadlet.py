@@ -1,7 +1,7 @@
 import subprocess
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from app.quadlet import get_quadlet_files, read_quadlet, write_quadlet
+from app.quadlet import get_quadlet_files, read_quadlet, write_quadlet, create_quadlet
 
 router = APIRouter(prefix="/api/quadlet", tags=["quadlet"])
 
@@ -13,6 +13,34 @@ class QuadletEditModel(BaseModel):
 @router.get("")
 def list_quadlet():
     return {"files": get_quadlet_files()}
+
+
+class QuadletCreateModel(BaseModel):
+    name: str
+    content: str
+
+
+@router.post("")
+def create_file(body: QuadletCreateModel):
+    name = body.name.strip()
+    if not name.endswith(".container"):
+        raise HTTPException(status_code=400, detail="Filename must end with .container")
+    if "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Filename must not contain path separators")
+    path = create_quadlet(name, body.content)
+    if path is None:
+        raise HTTPException(status_code=409, detail="File already exists")
+    reload = subprocess.run(
+        ["systemctl", "--user", "daemon-reload"],
+        capture_output=True,
+        text=True,
+    )
+    return {
+        "ok": True,
+        "path": str(path),
+        "reload_ok": reload.returncode == 0,
+        "reload_msg": (reload.stdout + reload.stderr).strip(),
+    }
 
 
 @router.get("/{name}")
