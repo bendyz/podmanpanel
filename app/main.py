@@ -212,8 +212,8 @@ async function loadServices() {
                     class="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600">
                     ${s.state === 'running' ? 'podman stop' : 'podman start'}
                 </button>
-                ${!isManaged ? `<button onclick="podmanAction(${i},'restart')" class="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600">Restart</button>
-                <button onclick="pullImage(${i})" class="px-2 py-1 text-xs rounded bg-blue-900 hover:bg-blue-800">Pull</button>` : ''}
+                ${!isManaged ? `<button onclick="podmanAction(${i},'restart')" class="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600">Restart</button>` : ''}
+                ${s.image ? `<button onclick="pullImage(${i})" class="px-2 py-1 text-xs rounded bg-blue-900 hover:bg-blue-800">Pull</button>` : ''}
             ` : '';
 
             return `
@@ -245,7 +245,17 @@ function _showSvcOut(idx, text) {
     wrap.classList.remove('hidden');
 }
 
+function _toggleSvcOut(idx) {
+    const wrap = document.getElementById(`svc-out-${idx}`);
+    if (!wrap.classList.contains('hidden')) {
+        wrap.classList.add('hidden');
+        return true;
+    }
+    return false;
+}
+
 async function svcStatus(idx) {
+    if (_toggleSvcOut(idx)) return;
     const s = _services[idx];
     _showSvcOut(idx, `Fetching status of ${s.service}…`);
     const d = await fetch(`/api/systemctl/${encodeURIComponent(s.service)}/status`).then(r => r.json());
