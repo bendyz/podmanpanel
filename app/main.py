@@ -1,14 +1,22 @@
 import os
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from app.routers import containers, quadlet, commands
 from app.routers import systemctl as systemctl_router
 from app.routers import services as services_router
-from app.config import STATIC_DIR, SERVER_HOST, SERVER_PORT, PODMAN_USER
+from app.routers import auth as auth_router
+from app.config import STATIC_DIR, SERVER_HOST, SERVER_PORT, PODMAN_USER, AUTH_ENABLED
+from app.auth import auth_middleware, get_current_user
 
 app = FastAPI(title="PodmanPanel")
 
+# Add auth middleware
+app.middleware("http")(auth_middleware)
+
+app.include_router(auth_router.router)
 app.include_router(containers.router)
 app.include_router(quadlet.router)
 app.include_router(commands.router)
@@ -22,7 +30,11 @@ def info():
 
 
 @app.get("/")
-def index():
+def index(request: Request):
+    # If auth enabled and not logged in, show login page
+    if AUTH_ENABLED and not get_current_user(request):
+        return HTMLResponse(LOGIN_HTML)
+
     path = Path(STATIC_DIR) / "index.html"
     if path.exists():
         return FileResponse(str(path))
@@ -32,6 +44,66 @@ def index():
 @app.get("/static/{filename}")
 def static_files(filename: str):
     return FileResponse(os.path.join(STATIC_DIR, filename))
+
+
+LOGIN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - PodmanPanel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center">
+<div class="bg-gray-800 rounded-lg p-8 w-full max-w-md">
+    <h1 class="text-2xl font-bold mb-6 text-center">PodmanPanel</h1>
+    <form id="login-form" class="space-y-4">
+        <div>
+            <label for="username" class="block text-sm font-medium mb-1">Username</label>
+            <input type="text" id="username" name="username" required
+                class="w-full bg-gray-700 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+            <label for="password" class="block text-sm font-medium mb-1">Password</label>
+            <input type="password" id="password" name="password" required
+                class="w-full bg-gray-700 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div id="error" class="hidden text-red-400 text-sm"></div>
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 rounded px-4 py-2 font-medium">
+            Login
+        </button>
+    </form>
+</div>
+
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    const errorEl = document.getElementById('error');
+
+    try {
+        const resp = await fetch('/api/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username, password}),
+        });
+        const data = await resp.json();
+
+        if (resp.ok) {
+            window.location.href = '/';
+        } else {
+            errorEl.textContent = data.detail || 'Login failed';
+            errorEl.classList.remove('hidden');
+        }
+    } catch (err) {
+        errorEl.textContent = 'Connection error';
+        errorEl.classList.remove('hidden');
+    }
+});
+</script>
+</body>
+</html>"""
 
 
 INDEX_HTML = """<!DOCTYPE html>

@@ -22,3 +22,9 @@ _config = _load_config()
 SERVER_HOST: str = _config.get("server", {}).get("host", "127.0.0.1")
 SERVER_PORT: int = int(_config.get("server", {}).get("port", 8080))
 CUSTOM_COMMANDS: dict[str, str] = _config.get("commands", {})
+
+# Auth settings
+AUTH_ENABLED: bool = "auth" in _config
+AUTH_USERNAME: str = _config.get("auth", {}).get("username", "")
+AUTH_PASSWORD_HASH: str = _config.get("auth", {}).get("password_hash", "")
+SECRET_KEY: str = _config.get("auth", {}).get("secret_key", "")
