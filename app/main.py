@@ -613,8 +613,68 @@ setInterval(loadServices, 30_000);
 </html>"""
 
 
+def setup_auth_interactive():
+    """Prompt user to set up authentication if not configured."""
+    import os
+    import sys
+    import secrets
+    import bcrypt
+    from pathlib import Path
+
+    config_path = Path(os.getenv("PODMANPANEL_CONFIG", "podmanpanel.toml"))
+
+    print("\n" + "=" * 60)
+    print("  AUTHENTICATION NOT CONFIGURED")
+    print("=" * 60)
+    print("\nPodmanPanel will run WITHOUT authentication.")
+    print("Anyone on your network will have full access.\n")
+
+    setup = input("Set up authentication now? [Y/n]: ").strip().lower()
+    if setup in ("", "y", "yes"):
+        print()
+        username = input("Enter username [admin]: ").strip() or "admin"
+        password = input("Enter password: ").strip()
+
+        if not password:
+            print("Error: Password cannot be empty. Skipping auth setup.")
+            print("Run 'python3 generate_auth.py' later to configure.\n")
+            return
+
+        print("\nGenerating secure configuration...")
+        password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        secret_key = secrets.token_hex(32)
+
+        # Append to config file
+        auth_section = f"""
+[auth]
+username = "{username}"
+password_hash = "{password_hash}"
+secret_key = "{secret_key}"
+"""
+        if config_path.exists():
+            content = config_path.read_text()
+            if "[auth]" not in content:
+                config_path.write_text(content.rstrip() + "\n" + auth_section)
+        else:
+            config_path.write_text(auth_section.lstrip())
+
+        print(f"\n✓ Authentication configured in {config_path}")
+        print("✓ Username:", username)
+        print("\nPlease restart podmanpanel for changes to take effect.")
+        sys.exit(0)
+    else:
+        print("\nSkipping authentication setup.")
+        print("Run 'python3 generate_auth.py' later to configure.\n")
+
+
 def main():
     import uvicorn
+    import sys
+
+    # Check if auth is configured; if not, prompt user
+    if not AUTH_ENABLED and sys.stdin.isatty():
+        setup_auth_interactive()
+
     uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT)
 
 

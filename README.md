@@ -14,7 +14,7 @@ pip install -e .
 podmanpanel
 ```
 
-The web UI will be available at `http://localhost:8080` (or the host/port configured in `podmanpanel.toml`).
+On first run, you'll be prompted to set up authentication (optional). The web UI will be available at `http://localhost:8080` (or the host/port configured in `podmanpanel.toml`).
 
 ## Running as systemd user service
 
@@ -68,13 +68,15 @@ secret_key = "your-secret-key-here"  # generate with: python3 -c "import secrets
 "Update System" = "sudo apt update && sudo apt upgrade -y"
 ```
 
-### Generate auth configuration
+### Authentication setup
+
+Authentication is configured on first run (interactive prompt) or later via:
 
 ```bash
-# Interactive helper script
+# Interactive helper script (auto-writes to podmanpanel.toml)
 python3 generate_auth.py
 
-# Or manually:
+# Or manually generate and add to config:
 python3 -c "import bcrypt; print(bcrypt.hashpw(b'your-password', bcrypt.gensalt()).decode())"
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
