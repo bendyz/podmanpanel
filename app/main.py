@@ -128,8 +128,8 @@ INDEX_HTML = """<!DOCTYPE html>
                 <button onclick="closeJournal()" class="px-3 py-1 rounded bg-gray-600 hover:bg-gray-700 text-sm">Close</button>
             </div>
         </div>
-        <pre id="journal-output"
-            class="flex-1 bg-gray-900 p-3 rounded text-xs font-mono overflow-auto whitespace-pre-wrap" style="min-height:300px"></pre>
+        <div id="journal-output"
+            class="flex-1 bg-gray-900 p-3 rounded text-xs font-mono overflow-auto" style="min-height:300px"></div>
     </div>
 </div>
 
@@ -379,7 +379,7 @@ function openJournal(idx) {
     const s = _services[idx];
     _journalService = s.service;
     document.getElementById('journal-service').textContent = s.service;
-    document.getElementById('journal-output').textContent = 'Loading…';
+    document.getElementById('journal-output').innerHTML = '<div class="text-gray-400" style="padding:2px 4px">Loading…</div>';
     document.getElementById('journal-follow').checked = true;
     const modal = document.getElementById('journal-modal');
     modal.classList.remove('hidden');
@@ -399,20 +399,41 @@ function stopJournalStream() {
     }
 }
 
+function _highlightLogLine(text) {
+    // Highlight error/warning/critical keywords
+    return text
+        .replace(/\b(ERROR|error|Error|CRITICAL|critical|Critical|FATAL|fatal|Fatal)\b/g, '<span class="text-red-400 font-semibold">$1</span>')
+        .replace(/\b(WARNING|warning|Warning|WARN|warn|Warn)\b/g, '<span class="text-yellow-400 font-semibold">$1</span>')
+        .replace(/\b(INFO|info|Info)\b/g, '<span class="text-blue-300">$1</span>')
+        .replace(/\b(DEBUG|debug|Debug)\b/g, '<span class="text-gray-500">$1</span>');
+}
+
 function startJournalStream() {
     stopJournalStream();
     const out = document.getElementById('journal-output');
-    out.textContent = '';
+    out.innerHTML = '';
+    let lineNum = 0;
     _journalEvtSource = new EventSource(
         `/api/systemctl/${encodeURIComponent(_journalService)}/journal/stream?lines=200`
     );
     _journalEvtSource.onmessage = (e) => {
         const atBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 30;
-        out.textContent += e.data + '\\n';
+        const line = document.createElement('div');
+        line.className = lineNum % 2 === 0 ? 'bg-gray-700/40' : 'bg-gray-800/60';
+        line.style.padding = '3px 6px';
+        line.style.whiteSpace = 'pre-wrap';
+        line.style.borderLeft = lineNum % 2 === 0 ? '2px solid #4b5563' : '2px solid transparent';
+        line.innerHTML = _highlightLogLine(esc(e.data));
+        out.appendChild(line);
+        lineNum++;
         if (atBottom) out.scrollTop = out.scrollHeight;
     };
     _journalEvtSource.onerror = () => {
-        out.textContent += '\\n--- stream ended ---\\n';
+        const line = document.createElement('div');
+        line.className = 'text-gray-500';
+        line.style.padding = '3px 6px';
+        line.textContent = '--- stream ended ---';
+        out.appendChild(line);
         stopJournalStream();
     };
 }
