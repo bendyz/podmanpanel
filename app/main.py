@@ -127,12 +127,27 @@ INDEX_HTML = """<!DOCTYPE html>
         <!-- Left: unified services list -->
         <div class="lg:col-span-2 space-y-6">
             <div class="bg-gray-800 rounded-lg p-4">
-                <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center justify-between mb-3">
                     <h2 class="text-xl font-semibold">Services</h2>
                     <div class="flex gap-2">
                         <button onclick="newQuadlet()" class="text-xs bg-green-700 hover:bg-green-600 px-3 py-1 rounded">+ New Quadlet</button>
                         <button onclick="loadServices()" class="text-xs text-gray-400 hover:text-gray-200">&#x21bb; Refresh</button>
                     </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
+                    <input id="filter-search" type="text" placeholder="Szukaj (min. 2 znaki)…"
+                        oninput="applyFilters()"
+                        class="bg-gray-700 rounded px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-52">
+                    <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+                        <input id="filter-running" type="checkbox" checked onchange="applyFilters()"
+                            class="w-4 h-4 accent-green-500">
+                        Pokaż działające
+                    </label>
+                    <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+                        <input id="filter-stopped" type="checkbox" onchange="applyFilters()"
+                            class="w-4 h-4 accent-gray-400">
+                        Pokaż niedziałające
+                    </label>
                 </div>
                 <div id="services" class="space-y-2">
                     <p class="text-gray-400 text-sm">Loading…</p>
@@ -247,65 +262,88 @@ async function loadInfo() {
 
 let _services = [];
 
+function _serviceCard(s, i) {
+    const name = s.service ? s.service.replace(/\\.service$/, '') : s.container_name;
+    const isManaged = !!s.service;
+
+    const meta = [
+        s.quadlet_file ? `<span class="text-gray-500 text-xs">${esc(s.quadlet_file)}</span>` : '',
+        s.image        ? `<span class="text-gray-400 text-xs truncate">${esc(s.image)}</span>` : '',
+    ].filter(Boolean).join(' ');
+
+    const managedBtns = isManaged ? `
+        <button onclick="editSvc(${i})"      class="px-2 py-1 text-xs rounded bg-gray-600 hover:bg-gray-500">Edit</button>
+        <button onclick="openJournal(${i})"  class="px-2 py-1 text-xs rounded bg-purple-800 hover:bg-purple-700">Journal</button>
+        <button onclick="svcStatus(${i})"    class="px-2 py-1 text-xs rounded bg-gray-600 hover:bg-gray-500">Status</button>
+        <button onclick="svcAction(${i},'start')"   class="px-2 py-1 text-xs rounded bg-green-800 hover:bg-green-700">Start</button>
+        <button onclick="svcAction(${i},'stop')"    class="px-2 py-1 text-xs rounded bg-red-800 hover:bg-red-700">Stop</button>
+        <button onclick="svcAction(${i},'restart')" class="px-2 py-1 text-xs rounded bg-yellow-800 hover:bg-yellow-700">Restart</button>
+        <button onclick="svcAction(${i},'enable')"  class="px-2 py-1 text-xs rounded bg-blue-900 hover:bg-blue-800">Enable</button>
+        <button onclick="svcAction(${i},'disable')" class="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600">Disable</button>
+    ` : '';
+
+    const podmanBtns = s.container_id ? `
+        <button onclick="podmanAction(${i},'${s.state === 'running' ? 'stop' : 'start'}')"
+            class="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600">
+            ${s.state === 'running' ? 'podman stop' : 'podman start'}
+        </button>
+        ${!isManaged ? `<button onclick="podmanAction(${i},'restart')" class="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600">Restart</button>` : ''}
+        ${s.image ? `<button onclick="pullImage(${i})" class="px-2 py-1 text-xs rounded bg-blue-900 hover:bg-blue-800">Pull</button>` : ''}
+    ` : '';
+
+    return `
+    <div class="bg-gray-700 rounded p-3">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2">
+            <span class="font-medium">${esc(name)}</span>
+            ${meta}
+            ${stateBadge(s.state)}
+            ${enabledBadge(s.enabled)}
+        </div>
+        <div class="flex flex-wrap gap-1">
+            ${managedBtns}
+            ${podmanBtns}
+        </div>
+        <div id="svc-out-${i}" class="hidden mt-2">
+            <pre class="bg-gray-900 p-2 rounded text-xs overflow-auto max-h-48 whitespace-pre-wrap"></pre>
+        </div>
+    </div>`;
+}
+
+function applyFilters() {
+    const query = document.getElementById('filter-search').value;
+    const showRunning = document.getElementById('filter-running').checked;
+    const showStopped = document.getElementById('filter-stopped').checked;
+    const needle = query.length >= 2 ? query.toLowerCase() : '';
+
+    const visible = _services.map((s, i) => ({ s, i })).filter(({ s }) => {
+        const isRunning = s.state === 'running';
+        if (isRunning  && !showRunning) return false;
+        if (!isRunning && !showStopped) return false;
+        if (needle) {
+            const name = (s.service ? s.service.replace(/\\.service$/, '') : s.container_name) || '';
+            const haystack = [name, s.image || '', s.quadlet_file || ''].join(' ').toLowerCase();
+            if (!haystack.includes(needle)) return false;
+        }
+        return true;
+    });
+
+    const el = document.getElementById('services');
+    if (!visible.length) {
+        el.innerHTML = '<p class="text-gray-400 text-sm">Brak pasujących serwisów.</p>';
+        return;
+    }
+    el.innerHTML = visible.map(({ s, i }) => _serviceCard(s, i)).join('');
+}
+
 async function loadServices() {
     const el = document.getElementById('services');
     try {
         _services = await fetch('/api/services').then(r => r.json());
-
         if (!_services.length) {
             el.innerHTML = '<p class="text-gray-400 text-sm">No containers or quadlet files found.</p>';
             return;
         }
-
-        el.innerHTML = _services.map((s, i) => {
-            const name = s.service ? s.service.replace(/\\.service$/, '') : s.container_name;
-            const isManaged = !!s.service; // has a quadlet file
-
-            const meta = [
-                s.quadlet_file ? `<span class="text-gray-500 text-xs">${esc(s.quadlet_file)}</span>` : '',
-                s.image        ? `<span class="text-gray-400 text-xs truncate">${esc(s.image)}</span>` : '',
-            ].filter(Boolean).join(' ');
-
-            // Action buttons for managed services (quadlet exists)
-            const managedBtns = isManaged ? `
-                <button onclick="editSvc(${i})"      class="px-2 py-1 text-xs rounded bg-gray-600 hover:bg-gray-500">Edit</button>
-                <button onclick="openJournal(${i})"  class="px-2 py-1 text-xs rounded bg-purple-800 hover:bg-purple-700">Journal</button>
-                <button onclick="svcStatus(${i})"    class="px-2 py-1 text-xs rounded bg-gray-600 hover:bg-gray-500">Status</button>
-                <button onclick="svcAction(${i},'start')"   class="px-2 py-1 text-xs rounded bg-green-800 hover:bg-green-700">Start</button>
-                <button onclick="svcAction(${i},'stop')"    class="px-2 py-1 text-xs rounded bg-red-800 hover:bg-red-700">Stop</button>
-                <button onclick="svcAction(${i},'restart')" class="px-2 py-1 text-xs rounded bg-yellow-800 hover:bg-yellow-700">Restart</button>
-                <button onclick="svcAction(${i},'enable')"  class="px-2 py-1 text-xs rounded bg-blue-900 hover:bg-blue-800">Enable</button>
-                <button onclick="svcAction(${i},'disable')" class="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600">Disable</button>
-            ` : '';
-
-            // Podman action buttons (shown for containers, standalone or managed)
-            const podmanBtns = s.container_id ? `
-                <button onclick="podmanAction(${i},'${s.state === 'running' ? 'stop' : 'start'}')"
-                    class="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600">
-                    ${s.state === 'running' ? 'podman stop' : 'podman start'}
-                </button>
-                ${!isManaged ? `<button onclick="podmanAction(${i},'restart')" class="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600">Restart</button>` : ''}
-                ${s.image ? `<button onclick="pullImage(${i})" class="px-2 py-1 text-xs rounded bg-blue-900 hover:bg-blue-800">Pull</button>` : ''}
-            ` : '';
-
-            return `
-            <div class="bg-gray-700 rounded p-3">
-                <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2">
-                    <span class="font-medium">${esc(name)}</span>
-                    ${meta}
-                    ${stateBadge(s.state)}
-                    ${enabledBadge(s.enabled)}
-                </div>
-                <div class="flex flex-wrap gap-1">
-                    ${managedBtns}
-                    ${podmanBtns}
-                </div>
-                <div id="svc-out-${i}" class="hidden mt-2">
-                    <pre class="bg-gray-900 p-2 rounded text-xs overflow-auto max-h-48 whitespace-pre-wrap"></pre>
-                </div>
-            </div>`;
-        }).join('');
-
+        applyFilters();
     } catch(e) {
         el.innerHTML = `<p class="text-red-400 text-sm">Error: ${esc(String(e))}</p>`;
     }
