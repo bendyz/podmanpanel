@@ -25,28 +25,94 @@ def get_quadlet_files() -> list[dict]:
     return files
 
 
+def read_container_keys(path: str) -> dict[str, list[str]]:
+    """Return all ``key=value`` pairs of the [Container] section.
+
+    Keys are lowercased; each maps to the list of values (quadlet allows the
+    same key more than once, e.g. several ``PublishPort=`` lines).
+    """
+    keys: dict[str, list[str]] = {}
+    try:
+        in_container = False
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line[0] in "#;":
+                    continue
+                if line.startswith("["):
+                    in_container = line.lower() == "[container]"
+                elif in_container and "=" in line:
+                    k, v = line.split("=", 1)
+                    keys.setdefault(k.strip().lower(), []).append(v.strip())
+    except Exception:
+        pass
+    return keys
+
+
 def get_container_name_for_quadlet(path: str, filename: str) -> str:
     """Return the container name this quadlet creates.
 
     Parses ``ContainerName=`` from the [Container] section.
     Falls back to ``systemd-{stem}`` (podman quadlet default).
     """
-    stem = Path(filename).stem
-    default = f"systemd-{stem}"
-    try:
-        in_container = False
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("["):
-                    in_container = line.lower() == "[container]"
-                elif in_container and line.lower().startswith("containername="):
-                    name = line.split("=", 1)[1].strip()
-                    if name:
-                        return name
-    except Exception:
-        pass
-    return default
+    for name in read_container_keys(path).get("containername", []):
+        if name:
+            return name
+    return f"systemd-{Path(filename).stem}"
+
+
+def parse_publish_port(value: str) -> dict | None:
+    """Parse a ``PublishPort=`` value into its parts.
+
+    Accepted forms (same as podman): ``containerPort``, ``hostPort:containerPort``,
+    ``ip:hostPort:containerPort``, ``[ipv6]:hostPort:containerPort``, each
+    optionally suffixed with ``/tcp`` or ``/udp`` and using ``a-b`` ranges.
+    """
+    v = value.strip()
+    if not v:
+        return None
+
+    proto = "tcp"
+    if "/" in v.rsplit(":", 1)[-1]:
+        v, _, proto = v.rpartition("/")
+
+    host_ip = ""
+    if v.startswith("["):  # bracketed IPv6 host address
+        end = v.find("]")
+        if end == -1:
+            return None
+        host_ip, rest = v[1:end], v[end + 1:].lstrip(":")
+    else:
+        parts = v.split(":")
+        if len(parts) == 3:
+            host_ip, rest = parts[0], ":".join(parts[1:])
+        else:
+            rest = v
+
+    if ":" in rest:
+        host_port, container_port = rest.split(":", 1)
+    else:
+        # Only a container port — podman picks a random host port.
+        host_port, container_port = "", rest
+
+    if not container_port and not host_port:
+        return None
+    return {
+        "host_ip": host_ip,
+        "host_port": host_port,
+        "container_port": container_port,
+        "proto": proto or "tcp",
+    }
+
+
+def get_published_ports(path: str) -> list[dict]:
+    """Return the parsed ``PublishPort=`` entries of a quadlet file."""
+    ports = []
+    for value in read_container_keys(path).get("publishport", []):
+        parsed = parse_publish_port(value)
+        if parsed:
+            ports.append(parsed)
+    return ports
 
 
 def _find_path(name: str) -> Path | None:

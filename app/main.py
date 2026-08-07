@@ -166,16 +166,6 @@ INDEX_HTML = """<!DOCTYPE html>
                 <pre id="quick-output" class="mt-3 bg-gray-900 p-3 rounded text-xs overflow-auto max-h-48 hidden"></pre>
             </div>
 
-            <div class="bg-gray-800 rounded-lg p-4">
-                <h2 class="text-xl font-semibold mb-4">Run Command</h2>
-                <textarea id="cmd-input" rows="3"
-                    class="w-full bg-gray-700 rounded p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    placeholder="podman ps -a"></textarea>
-                <button onclick="runCommand()"
-                    class="mt-2 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">Run</button>
-                <pre id="cmd-output" class="mt-3 bg-gray-900 p-3 rounded text-xs overflow-auto max-h-64 hidden"></pre>
-            </div>
-
         </div>
     </div>
 </div>
@@ -241,6 +231,30 @@ function enabledBadge(enabled) {
     return `<span class="text-xs px-2 py-0.5 rounded ${cls}">${esc(enabled)}</span>`;
 }
 
+const WILDCARD_IPS = ['', '0.0.0.0', '::', '*'];
+
+function portChips(ports) {
+    if (!ports || !ports.length) return '';
+    const chips = ports.map(p => {
+        const mapping = `${p.host_port ? p.host_port + ':' : ''}${p.container_port}/${p.proto}`;
+        // No host port means podman picked a random one — nothing to link to.
+        if (!p.host_port || p.proto !== 'tcp') {
+            return `<span class="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-400 font-mono"
+                title="${esc(mapping)}">${esc(p.host_port || p.container_port)}</span>`;
+        }
+        // A port bound to a specific address is only reachable there; otherwise
+        // reuse whatever host the panel itself was opened on.
+        let host = WILDCARD_IPS.includes(p.host_ip) ? window.location.hostname : p.host_ip;
+        if (host.includes(':')) host = `[${host}]`;
+        const first = String(p.host_port).split('-')[0];
+        const scheme = ['443', '8443'].includes(first) ? 'https' : 'http';
+        return `<a href="${scheme}://${host}:${esc(first)}" target="_blank" rel="noopener"
+            class="text-xs px-2 py-0.5 rounded bg-gray-800 text-blue-300 hover:bg-blue-900 hover:text-blue-100 font-mono"
+            title="${esc(mapping)}">${esc(p.host_port)}</a>`;
+    });
+    return `<div class="ml-auto flex flex-wrap items-center gap-1">${chips.join('')}</div>`;
+}
+
 function toast(msg, ok = true) {
     const t = document.createElement('div');
     t.className = `fixed bottom-5 right-5 px-4 py-2 rounded shadow-lg text-sm z-50 ${ok ? 'bg-green-700' : 'bg-red-700'}`;
@@ -298,6 +312,7 @@ function _serviceCard(s, i) {
             ${meta}
             ${stateBadge(s.state)}
             ${enabledBadge(s.enabled)}
+            ${portChips(s.ports)}
         </div>
         <div class="flex flex-wrap gap-1">
             ${managedBtns}
@@ -321,7 +336,8 @@ function applyFilters() {
         if (!isRunning && !showStopped) return false;
         if (needle) {
             const name = (s.service ? s.service.replace(/\\.service$/, '') : s.container_name) || '';
-            const haystack = [name, s.image || '', s.quadlet_file || ''].join(' ').toLowerCase();
+            const ports = (s.ports || []).map(p => `${p.host_port} ${p.container_port}`).join(' ');
+            const haystack = [name, s.image || '', s.quadlet_file || '', ports].join(' ').toLowerCase();
             if (!haystack.includes(needle)) return false;
         }
         return true;
@@ -599,7 +615,7 @@ async function runQuickCommand(idx) {
         const d = await fetch('/api/commands', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({command: _quickCommands[idx].command}),
+            body: JSON.stringify({label: _quickCommands[idx].label}),
         }).then(r => r.json());
         stat.textContent = d.ok ? '✅' : '❌';
         const text = (d.stdout + d.stderr).trim();
@@ -612,28 +628,9 @@ async function runQuickCommand(idx) {
     }
 }
 
-// ── Run Command ───────────────────────────────────────────────────────────────
-
-async function runCommand() {
-    const cmd = document.getElementById('cmd-input').value.trim();
-    if (!cmd) return;
-    const out = document.getElementById('cmd-output');
-    out.textContent = 'Running…';
-    out.classList.remove('hidden');
-    const d = await fetch('/api/commands', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({command: cmd}),
-    }).then(r => r.json());
-    out.textContent = (d.ok ? '✓ ' : '✗ ') + (d.stdout + d.stderr).trim();
-}
-
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('cmd-input').addEventListener('keydown', e => {
-        if (e.ctrlKey && e.key === 'Enter') runCommand();
-    });
     document.getElementById('edit-modal').addEventListener('click', e => {
         if (e.target === e.currentTarget) closeEditor();
     });

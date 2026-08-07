@@ -1,7 +1,7 @@
 """Unified view: merges quadlet files + running containers into one list."""
 import subprocess
 from fastapi import APIRouter
-from app.quadlet import get_quadlet_files, get_container_name_for_quadlet
+from app.quadlet import get_quadlet_files, get_container_name_for_quadlet, get_published_ports
 from app.podman import get_containers
 
 router = APIRouter(prefix="/api/services", tags=["services"])
@@ -32,6 +32,12 @@ def list_services():
         if container:
             matched_ids.add(container["Id"])
 
+        # The quadlet file is the source of truth; fall back to the live
+        # container so ports still show for units without PublishPort=.
+        ports = get_published_ports(q["path"])
+        if not ports and container:
+            ports = container["Ports"]
+
         result.append({
             "service": q["service"],
             "quadlet_file": q["name"],
@@ -40,6 +46,7 @@ def list_services():
             "image": container["Image"] if container else None,
             "state": container["State"] if container else None,
             "enabled": _is_enabled(q["service"]),
+            "ports": ports,
         })
 
     # Containers with no matching quadlet file
@@ -53,6 +60,7 @@ def list_services():
                 "image": c["Image"],
                 "state": c["State"],
                 "enabled": None,
+                "ports": c["Ports"],
             })
 
     return result

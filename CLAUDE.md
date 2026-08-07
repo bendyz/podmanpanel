@@ -48,18 +48,16 @@ Browser → FastAPI (`app/main.py`) → Router (`app/routers/`) → Helper (`app
 | `app/quadlet.py` | Scans `~/.config/containers/systemd/` and its `user/` subdir for `.container` files. Returns `{name, service, path}` dicts where `service = stem + ".service"`. |
 | `app/routers/containers.py` | `GET /api/containers`, `POST /api/containers/{id}/action`, `POST /api/containers/{id}/update` |
 | `app/routers/quadlet.py` | `GET /api/quadlet`, `GET /api/quadlet/{name}`, `PUT /api/quadlet/{name}` |
-| `app/routers/commands.py` | `GET /api/commands` (lists from config), `POST /api/commands` (runs shell command, 60 s timeout, `shell=True`) |
+| `app/routers/commands.py` | `GET /api/commands` (lists from config), `POST /api/commands` (runs a command by its config `label` — arbitrary shell input is rejected; 60 s timeout, `shell=True`) |
 | `app/routers/systemctl.py` | `GET /api/systemctl/{service}/status`, `POST /api/systemctl/{service}/action` — runs `systemctl --user` |
 | `app/main.py` | FastAPI app; `/api/info` endpoint; `INDEX_HTML` embedded frontend; `main()` entry point reads host/port from config |
 | `podmanpanel.toml` | User-edited config (not committed with secrets) |
 | `static/` | Optional: `static/index.html` overrides the embedded `INDEX_HTML` for frontend development |
 
 ### Frontend
-Single HTML page embedded as `INDEX_HTML` in `app/main.py`. Tailwind CSS from CDN. Four panels:
-- **Containers** — `podman ps -a`, start/stop/restart/pull, auto-refreshes every 30 s
-- **Quadlet Files** — lists `.container` files, systemctl start/stop/restart/status per file, inline output, edit modal
+Single HTML page embedded as `INDEX_HTML` in `app/main.py`. Tailwind CSS from CDN. Two panels:
+- **Services** — unified list from `/api/services` (quadlet files merged with `podman ps -a`); state/enabled badges, published ports as clickable links on the right, systemctl + podman actions, journal viewer, edit/create quadlet modal, filters, auto-refreshes every 30 s
 - **Quick Commands** — buttons from `[commands]` in `podmanpanel.toml`, ⏳/✅/❌ indicator, output below
-- **Run Command** — freeform shell input, Ctrl+Enter submits
 
 ### Env vars
 | Variable | Default | Purpose |

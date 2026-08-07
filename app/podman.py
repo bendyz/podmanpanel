@@ -14,6 +14,34 @@ def run_podman(args: list[str], user: str | None = None) -> subprocess.Completed
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
+def _normalize_ports(ports) -> list[dict]:
+    """Map podman's `Ports` entries to the shape used by the API.
+
+    A `range` > 1 means the entry covers N consecutive ports (8000-8002).
+    """
+    out = []
+    for p in ports or []:
+        if not isinstance(p, dict):
+            continue
+        host_port = p.get("host_port") or ""
+        container_port = p.get("container_port") or ""
+        span = p.get("range") or 1
+        if span > 1:
+            try:
+                if host_port:
+                    host_port = f"{host_port}-{int(host_port) + span - 1}"
+                container_port = f"{container_port}-{int(container_port) + span - 1}"
+            except (TypeError, ValueError):
+                pass
+        out.append({
+            "host_ip": p.get("host_ip") or "",
+            "host_port": str(host_port),
+            "container_port": str(container_port),
+            "proto": p.get("protocol") or "tcp",
+        })
+    return out
+
+
 def _normalize(c: dict) -> dict:
     """Normalize podman JSON fields that differ across versions."""
     names = c.get("Names") or c.get("Name") or ""
@@ -24,6 +52,7 @@ def _normalize(c: dict) -> dict:
         "Names": names,
         "Image": c.get("Image", ""),
         "State": c.get("State") or c.get("Status") or "unknown",
+        "Ports": _normalize_ports(c.get("Ports")),
     }
 
 

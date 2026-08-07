@@ -7,7 +7,7 @@ router = APIRouter(prefix="/api/commands", tags=["commands"])
 
 
 class CommandModel(BaseModel):
-    command: str
+    label: str
 
 
 @router.get("")
@@ -20,9 +20,16 @@ def list_commands():
 
 @router.post("")
 def run_command(body: CommandModel):
+    """Run one of the commands defined in podmanpanel.toml.
+
+    Only configured labels can be run — arbitrary shell input is never accepted.
+    """
+    command = CUSTOM_COMMANDS.get(body.label)
+    if command is None:
+        raise HTTPException(status_code=404, detail="Unknown command")
     try:
         result = subprocess.run(
-            body.command,
+            command,
             shell=True,
             capture_output=True,
             text=True,

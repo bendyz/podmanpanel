@@ -93,7 +93,8 @@ Use `PODMANPANEL_CONFIG` environment variable to specify a different config file
 - **Quadlet Files**: Create, edit, and manage `.container` files in `~/.config/containers/systemd/`
 - **Systemd Integration**: Control services via `systemctl --user` (start/stop/restart/enable/disable)
 - **Live Journal**: Real-time log streaming from `journalctl -f` with syntax highlighting
-- **Quick Commands**: Custom shell commands from config file
+- **Published Ports**: Ports from `PublishPort=` (or the running container) shown per service as clickable links
+- **Quick Commands**: Predefined shell commands from the config file — only labels listed in `[commands]` can be run
 - **Auto-refresh**: Container and service status updates every 30 seconds
 
 ## Environment Variables
