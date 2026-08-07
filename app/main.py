@@ -237,10 +237,11 @@ function portChips(ports) {
     if (!ports || !ports.length) return '';
     const chips = ports.map(p => {
         const mapping = `${p.host_port ? p.host_port + ':' : ''}${p.container_port}/${p.proto}`;
+        const text = p.label ? `${p.label}: ${p.host_port || p.container_port}` : (p.host_port || p.container_port);
         // No host port means podman picked a random one — nothing to link to.
         if (!p.host_port || p.proto !== 'tcp') {
             return `<span class="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-400 font-mono"
-                title="${esc(mapping)}">${esc(p.host_port || p.container_port)}</span>`;
+                title="${esc(mapping)}">${esc(text)}</span>`;
         }
         // A port bound to a specific address is only reachable there; otherwise
         // reuse whatever host the panel itself was opened on.
@@ -250,7 +251,7 @@ function portChips(ports) {
         const scheme = ['443', '8443'].includes(first) ? 'https' : 'http';
         return `<a href="${scheme}://${host}:${esc(first)}" target="_blank" rel="noopener"
             class="text-xs px-2 py-0.5 rounded bg-gray-800 text-blue-300 hover:bg-blue-900 hover:text-blue-100 font-mono"
-            title="${esc(mapping)}">${esc(p.host_port)}</a>`;
+            title="${esc(mapping)}">${esc(text)}</a>`;
     });
     return `<div class="ml-auto flex flex-wrap items-center gap-1">${chips.join('')}</div>`;
 }

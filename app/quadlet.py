@@ -106,12 +106,55 @@ def parse_publish_port(value: str) -> dict | None:
 
 
 def get_published_ports(path: str) -> list[dict]:
-    """Return the parsed ``PublishPort=`` entries of a quadlet file."""
-    ports = []
-    for value in read_container_keys(path).get("publishport", []):
-        parsed = parse_publish_port(value)
-        if parsed:
-            ports.append(parsed)
+    """Return the parsed ``PublishPort=`` entries of a quadlet file.
+
+    A ``#`` comment right after a ``PublishPort=`` line (or trailing on the
+    same line) becomes that port's ``label``, e.g.::
+
+        PublishPort=8014:8014
+        #Interfejs WWW
+    """
+    ports: list[dict] = []
+    try:
+        with open(path) as f:
+            lines = f.readlines()
+    except Exception:
+        return ports
+
+    in_container = False
+    last_port: dict | None = None
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("["):
+            in_container = line.lower() == "[container]"
+            last_port = None
+            continue
+        if not in_container:
+            continue
+        if line[0] in "#;":
+            if last_port is not None and "label" not in last_port:
+                label = line[1:].strip()
+                if label:
+                    last_port["label"] = label
+            else:
+                last_port = None
+            continue
+
+        last_port = None
+        if line.lower().startswith("publishport="):
+            value = line.split("=", 1)[1]
+            label = None
+            if "#" in value:
+                value, _, label = value.partition("#")
+                label = label.strip() or None
+            parsed = parse_publish_port(value.strip())
+            if parsed:
+                if label:
+                    parsed["label"] = label
+                ports.append(parsed)
+                last_port = parsed
     return ports
 
 
